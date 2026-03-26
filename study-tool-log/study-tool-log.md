@@ -4,12 +4,12 @@
 
 ## **도구 이름**
 
-ts-hint-coach claude agent
-ts-exercise-explainer agent
+ts-hint-coach
+ts-exercise-explainer
 
 ## **도구 유형** (예: GPTs, gems, Claude Code(skill, command, agent, ...) Chrome Extension, CLI, 웹사이트 등)
 
-### ts-hint-coach claude agent
+### ts-hint-coach
 
 Claude Code Agent
 
@@ -19,7 +19,7 @@ Cluade Code Agent
 
 ## **해결하려는 문제**: 어떤 학습 상의 불편/문제를 해결하려 했는가?
 
-### ts-exercise-explainer agent
+### ts-hint-coach
 
 문제가 어려웠을때 claude code 를 통해 힌트를 제공받았다.
 하지만 claude code 를 통해서 얻은 힌트는 구체적이지도 않았고 생각보다 너무 큰 힌트를 주어서 생각할 부분들을 오히려 놓친거 같았다.
@@ -36,7 +36,7 @@ Cluade Code Agent
 
 ## **어떻게 만들었는가**: 간단한 제작 과정
 
-### ts-exercise-explainer agent
+### ts-hint-coach
 
 claude 에서 /agents 를 통해 제작하였다.
 

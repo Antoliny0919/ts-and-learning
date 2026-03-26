@@ -321,6 +321,226 @@ type SuccessResponse<T> = {
 
 ---
 
+## 학습 로그 #3
+
+**시간**:
+03/26 10:30 ~ 11:30 (60분)
+03/26 12:30 ~ 13:00 (30분)
+
+**학습 범위**:
+
+typescript-exercieses 10
+
+### 1. 이번 타임의 학습 전략
+
+- 이전에 바꾸기로 한 전략은 무엇이었고, 실행했는가?
+- 실제로 어떻게 학습했는지 디테일한 과정을 써보세요.
+
+Question 10
+---
+
+지금까지 가장 어려웠던 문제다.
+완전히 답을 봤다.
+ts-exercise-explainer를 통해 힌트를 얻었지만 해결하기 어려웠다.
+
+점진적으로 이 문제를 해석해보겠다.
+
+```ts
+export function promisify(arg: unknown): unknown {
+    return null;
+}
+
+export const api = {
+    requestAdmins: promisify(oldApi.requestAdmins),
+    ...
+};
+
+async function startTheApp() {
+    console.log('Admins:');
+    (await api.requestAdmins()).forEach(logPerson);
+    ...
+}
+```
+문제에서 사용하는 `promisify`는 `Promise`를 반환하는걸 목표로 하고 있다.
+`startTheApp`에서 사용되는 형태를 보면 당연히 `Promise`를 반환하는게 맞다.
+가장 먼저 `promisify`로 사용되는 `requestAdmins`가 사용되는 부분을 보면 함수 객체를 wrapping하여 호출한다.
+즉 `promisify`는 호출가능한 객체여야 한다는걸 의미한다.
+즉 반환값은 `() => Promise` 이런 형태가 되어야한다는걸 알 수 있다.(`Promise` 객체를 반환하는 함수)
+```ts
+export function promisify(arg: unknown): () => Promise {
+    return () => new Promise((resolve, reject) => {
+
+    });
+}
+
+export const api = {
+    requestAdmins: promisify(oldApi.requestAdmins),
+    ...
+};
+
+const oldApi = {
+    requestAdmins(callback: (response: ApiResponse<Admin[]>) => void) {
+        callback({
+            status: 'success',
+            data: admins
+        });
+    },
+    requestUsers(callback: (response: ApiResponse<User[]>) => void) {
+        callback({
+            status: 'success',
+            data: users
+        });
+    },
+    ...
+}
+```
+`arg`는 어떤 타입이 되어야할까?
+`promisify`가 사용되는 api변수값을 확인해보면 `oldApi.requestAdmins`가 전달되는걸 확인할 수 있다.
+즉, `oldApi.requestAdmins`가 `arg` 파라미터에 전달되는 인수라고 볼 수 있다.
+이외에도 전달되는 형태를 보면 `requestAdmins`와 동일하다.
+그렇기 때문에 `requestAdmins`의 타입을 그대로 `arg`에 사용하면 되지 않을까?
+
+```ts
+export function promisify<T>(arg: (callback: (response: ApiResponse<T>) => void) => void): () => Promise {
+    return () => new Promise((resolve, reject) => {
+
+    });
+}
+
+export type ApiResponse<T> = (
+    {
+        status: 'success';
+        data: T;
+    } |
+    {
+        status: 'error';
+        error: string;
+    }
+);
+```
+
+`new Promise` 내부 구현으로 어떤 동작이 들어가야할까?
+`ApiResponse` 타입을 보면 성공했을때와 실패했을때의 데이터 타입을 알 수 있다.
+결국 `promisify`의 결과로 위와같은 데이터가 반환되어야 한다는것이다.
+
+여기서 `arg`가 어떻게 동작하는지 다시 확인할 필요가 있다.
+`arg`의 타입은 `(callback: (response: ApiResponse<T>) => void) => void` 이다.
+즉, `arg` 자체가 콜백을 받아서 실행하는 함수다.
+
+그렇다면 `new Promise` 내부에서 `arg`를 직접 호출하면 되는 것 아닐까?
+그리고 그 호출 시 전달하는 콜백 안에서 `response`를 받아 분기하면 된다.
+
+```ts
+return () => new Promise((resolve, reject) => {
+    arg((response) => {
+        // response는 ApiResponse<T> 타입
+        // 성공이면 resolve, 실패면 reject
+    });
+});
+```
+
+`ApiResponse<T>`를 보면 `status`가 `'success'`인 경우 `data: T`가 존재하고,
+`'error'`인 경우 `error: string`이 존재한다.
+TypeScript는 `status`를 확인하는 순간 discriminated union으로 타입을 좁혀주므로
+`if (response.status === 'success')` 분기 안에서는 자동으로 `response.data`에 접근 가능하다.
+
+```ts
+arg((response) => {
+    if (response.status === 'success') {
+        resolve(response.data);   // T 타입
+    } else {
+        reject(new Error(response.error));   // string → Error 객체로 감싸서 reject
+    }
+});
+```
+
+최종
+
+```ts
+export function promisify<T>(arg: (callback: (response: ApiResponse<T>) => void) => void): () => Promise<T> {
+    return () => new Promise((resolve, reject) => {
+        arg((response) => {
+            if (response.status === 'success') {
+                resolve(response.data);
+            } else {
+                reject(new Error(response.error));
+            }
+        });
+    });
+}
+```
+
+사실 어렵게 느껴졌던 이유는 `arg`를 단순한 값으로 바라봤기 때문인 것 같다.
+`arg`가 "콜백을 넘겨주면 그 콜백을 호출해주는 함수" 라는 관점으로 바라보니
+`new Promise` 내부에서 `arg(콜백)`을 호출하고, 그 콜백 안에서 `resolve/reject`를 결정한다는 흐름을 자연스럽게 그려낼 수 있었다.
+
+### 2. 전략 평가
+
+- 효과적이었던 것과 그 이유
+
+점검하기에는 내 수준이 너무 처참해서 답을 볼 수밖에 없었다.
+학습을 평가하기에는 데이터가 너무 부족한거 같다.
+
+- 비효과적이었던 것과 그 이유
+
+내가 완전히 모르는 문제에 마주했을때는 어떤식으로 학습하는게 좋을까? 에 대해서 고민해볼만 한 기록이다.
+완벽히 이해하지는 못하더라도 어느정도는 이해하고 넘어가야한다고 생각한다.
+내가 생각하는대로 풀이/해석을 작성해보았다.
+그 과정에서 문제를 더 잘 이해하기 위해 문제에 대한 해설을 해주는 `ts-exercise-explainer` 라는 에이전트를 만들게 되었다.
+이 에이전트를 통해 문제에 더 정확한 해설을 요구하여 이해에 큰 도움이 되었다.
+비효과적인 부분은 없었다.
+사실 비효과적인 부분을 확인할 데이터 또한 부족했다.
+
+### 3. AI 피드백
+
+- 자신의 학습 전략에 대해 AI에게 피드백을 요청하고, 유용했던 제안 1가지 이상 기록
+
+> 완전히 모르겠는 문제에 대해서 공부할때 다음과 같은 전략을 사용했어.
+> 1. 문제 힌트 코치 에이전트를 통해 단계별 힌트를 받으면서 시도.
+> 2. 그래도 모르겠다면 답을 통해 공부.
+> 3. 답을보고 해설 에이전트를 통해 전문적인 해설을 받은 뒤 해설을 보며 이해.
+> 4. 이해한 내용을 정리.
+> 완전히 모르는 문제에 마주했을때는 어떤식으로 학습하는게 좋을까? 피드백을 줄 수 있어?
+
+2번과 3번사이에 한 가지 과정이 필요한거 같다.
+> "레벨 4 힌트까지 받았는데도 왜 나는 풀지 못했지?"
+
+이걸 한 줄이라도 적어두면 나중에 해설을 볼 때 훨씬 깊게 이해될 수 있다. 단순히 "몰랐다"가 아니라 "어떤 개념의 어떤 부분이 연결이 안 됐다"를 파악해야한다.
+
+### 4. 다음 타임에 바꿀 것
+
+- 유지할 것과 그 이유
+현재 학습방식 유지.
+- 바꿀 것과 그 이유
+모르는 문제에 마주했을때 힌트를 봤음에도 불구하고 해결하지 못하면 "내가 이 문제를 왜 해결하지 못했을까?"
+에 대해서 고민하는 시간을 가지고 이 부분도 AI에게 물어봄으로써 나에게 부족한 부분이 어떤 부분인지 파악할 것이다.
+
+---
+
+## 학습 로그 #4
+
+**시간**: MM/DD HH:MM ~ HH:MM (약 \_\_분)
+**학습 범위**:
+
+### 1. 이번 타임의 학습 전략
+
+- 이전에 바꾸기로 한 전략은 무엇이었고, 실행했는가?
+- 실제로 어떻게 학습했는지 디테일한 과정을 써보세요.
+
+### 2. 전략 평가
+
+- 효과적이었던 것과 그 이유
+- 비효과적이었던 것과 그 이유
+
+### 3. AI 피드백
+
+- 자신의 학습 전략에 대해 AI에게 피드백을 요청하고, 유용했던 제안 1가지 이상 기록
+
+### 4. 다음 타임에 바꿀 것
+
+- 유지할 것과 그 이유
+- 바꿀 것과 그 이유
+
 ...
 
 - 효과적인 학습이 왜 중요한가?

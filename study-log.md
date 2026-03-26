@@ -519,39 +519,186 @@ export function promisify<T>(arg: (callback: (response: ApiResponse<T>) => void)
 
 ## 학습 로그 #4
 
-**시간**: MM/DD HH:MM ~ HH:MM (약 \_\_분)
+**시간**:
+03/26 13:00 ~ 14:00 (약 60분)
+03/26 15:30 ~ 17:00 (약 90분)
 **학습 범위**:
 
 ### 1. 이번 타임의 학습 전략
 
 - 이전에 바꾸기로 한 전략은 무엇이었고, 실행했는가?
+문제와 관련된 전략을 도입했다.
+문제를 최종적으로 해결하지 못했을때 "내가 이 문제를 왜 해결하지 못했을까"에 대한 고민을 해보는것이다.
+하지만 이번 학습에서는 문제를 풀지는 않았다.
+그래서 실행해보지는 못했던거 같다.
+
 - 실제로 어떻게 학습했는지 디테일한 과정을 써보세요.
+
+타입스크립트를 사용해보면서 누구나 이러한 생각은 한 번쯤 들지 않을까 싶다.
+```ts
+const arr: number[] = [1, 2, 'hello wrold'];
+```
+위 코드는 TS에서 에러가 발생한다.
+TypeScript는 어떻게 위 코드만 보고도 에러를 잡아낼 수 있을까?
+어떠한 과정으로 숫자 배열을 예상하지만 막상 배열 원소 내부에는 String이 존재한다는걸 찾아내 에러를 반환하는 걸까?
+
+내부동작이 궁금했다. (재밌지 않을까?)
+
+TS의 모든 내부 동작을 하나하나 파악하기는 굉장히 시간이 오래걸리고 어렵기 때문에 아주 간단하게 AI를 통해 알아봤다.
+
+```ts
+const ts = require('/tmp/ts-test/node_modules/typescript');
+```
+
+```ts
+const SOURCE = `const arr: number[] = [1, 2, 'helloworld'];`;
+const FILENAME = 'test.ts';
+
+const sourceFile = ts.createSourceFile(
+    FILENAME,
+    SOURCE,
+    ts.ScriptTarget.Latest,
+    /*setParentNodes*/ true,
+);
+```
+가장 먼저 테스트에 사용할 파일객체를 만들었다.
+실제로는 존재하지 않고 오직 TypeScript가 어떻게 동작하는지 확인하는 용도이다.
+사용된 `createSourceFile`은 문자열 소스코드를 SourceFile(AST)로 변환한다.
+일단 지금 당장은 `SOURCE`가 담긴 TS파일을 만들었다고 생각하면 된다.
+
+```ts
+const host = ts.createCompilerHost({});
+
+const program = ts.createProgram(
+    [FILENAME],
+    { strict: true, target: ts.ScriptTarget.Latest },
+    host,
+);
+```
+`createCompilerHost`는 소스 문자열을 미리 AST로 변환해두는 과정을 거친다.
+TS도 JS와 동일하게 AST로 변환하는 과정이 당연히 필요하다.
+단지 AST에서 바이트로 변환되기 전에 타입검사를 수행할 뿐이다.
+
+`host.getSourceFile`을 호출해 내부적으로 이전에 만들었던 AST를 수집한다.
+
+```ts
+const checker = program.getTypeChecker();
+
+const diagnostics = program.getSemanticDiagnostics(sourceFile);
+const d = diagnostics[0];
+
+d.code
+// 2322
+
+d.start
+// 29
+
+d.legnth
+// 12
+
+SOURCE.slice(d.start, d.start + d.length)
+// '"helloworld"'
+```
+
+이후에 `getTypeChecker`를 통해 `typeChecker` 객체를 만든뒤 
+`getSemanticDiagnostics`에서 실질적인 타입검사를 수행하게 된다.
+(참고로 해당 메서드에서 `typeChecker`가 사용된다.)
+
+위 예시를 보면 알 수 있듯이 `getSemanticDiagnostics` 호출이후에 진단결과인 `diagnostics`에 접근하여 `code`, `start`, `length` 속성을 확인해보았다.
+code의 경우는 TS 에러코드를 의미하고 start, length를 조합하면 어떤 요소가 에러를 만들어냈는지에 대해서 알 수 있다.
+
+이렇게 TS는 내부적으로 `getSemanticDiagnostics`를 통해 타입 검사를 수행하게 된다.
+사실 실질적으로 `getSemanticDiagnostics`는 외부 진입점에 불가하고
+내부적으로 호출하게 되는 `checkSourceFile -> checkSourceElement...`를 통해 수행된다.
+
+조금 더 내부적으로 TS가 어떻게 특정 파일에서 타입을 파악하고 값들을 통해 예상되는 타입을 추론한 뒤 비교하는 걸까?
+```ts
+function findNode(node, kind) {
+    if (node.kind === kind) return node;
+    return ts.forEachChild(node, child => findNode(child, kind));
+}
+
+function findAllNodes(node, kind, result = []) {
+    if (node.kind === kind) result.push(node);
+    ts.forEachChild(node, child => findAllNodes(child, kind, result));
+    return result;
+}
+
+const varDecl = findNode(sourceFile, ts.SyntaxKind.VariableDeclaration);
+const arrayLiteral = findNode(sourceFile, ts.SyntaxKind.ArrayLiteralExpression);
+
+const declaredType = checker.getTypeAtLocation(varDecl.name);
+checker.typeToString(declaredType);
+// number[]
+
+const arrType = checker.getTypeAtLocation(arrayLiteral);
+checker.typeToString(arrType);
+// (string | number)[]
+```
+여기서 구현된 `findNode`, `findAllNodes`는 AST를 재귀적으로 순회한다.
+`ts.forEachChild`는 TypeScript가 제공하는 AST 탐색 API로, 특정 노드의 자식 노드들을 순회하며 콜백을 실행한다.
+`SyntaxKind`는 AST 노드의 종류를 나타내는 열거형으로, `VariableDeclaration`, `ArrayLiteralExpression` 등 TypeScript 문법 요소 하나하나가 상수값으로 정의되어 있다.
+
+위 헬퍼 함수를 활용해 소스코드에서 두 가지 노드를 꺼냈다.
+- `varDecl`: `arr: number[] = [...]` 에 해당하는 변수 선언 노드
+- `arrayLiteral`: `[1, 2, "hello world"]` 에 해당하는 배열 리터럴 노드
+
+그리고 `checker.getTypeAtLocation()`을 각각에 호출하면 서로 다른 결과가 나온다.
+
+```
+declaredType: number[]
+arrType: (string | number)[]
+```
+
+TypeScript는 이 두 타입을 비교한다.
+`number[]`에 `(string | number)[]`를 할당할 수 있는가?
+당연히 불가능하다 -> `string`은 `number`에 할당될 수 없다.
+
+이것이 바로 `TS2322: Type 'string' is not assignable to type 'number'` 에러가 발생하는 이유이다.
+
+이렇게 TypeScript의 타입 검사는 내부적으로 선언된 타입과 추론된 타입을 비교하는 식으로 동작한다.
 
 ### 2. 전략 평가
 
 - 효과적이었던 것과 그 이유
+
+호기심을 가졌던 부분이기에 재밌었다.
+이런식으로 동작하는구나 라는걸 아주 대충 알게되었다.
+정말 간단하게만 알아본거라 얕은 이해이기는 하지만 내부적인 기능을 실제로 따로 적용해보면서 이런식으로 동작하겠구나 라는걸 추측할 수 있었다.
+
 - 비효과적이었던 것과 그 이유
+
+아무래도 내부코드를 보는 과정은 굉장한 딥다이브가 필요한 영역이라고 느껴진다.
+그에 비해 아주 짧은 시간을 투자하여 빠르게 흐름만 파악하고 실제로 이렇게 동작하는지 확인하기만 했다.
+하지만 이 방식이 자칫하면 양날의 검이 될 수 있다고 생각한다. (너무나도 많은 시간을 쏟을 수도 있고 그에비해 스트레스만 쌓일 수 있다.)
+지금 수준에는 이정도만 진행하는게 맞다고 생각한다.
+더 궁금하고 매력을 느낄때 자세하게 소스코드를 보기 시작해도 괜찮다.
+~~사실 checker에만 5만줄이 넘는 코드를 보고 자신감이 사라졌다.~~
 
 ### 3. AI 피드백
 
 - 자신의 학습 전략에 대해 AI에게 피드백을 요청하고, 유용했던 제안 1가지 이상 기록
 
+더 발전시킬 수 있는 부분에 대하여 피드백 받았다.
+> 실제 TypeScript 코드를 작성할 때 어떻게 연결되는지가 빠져있어요. 
+> AST를 직접 다루는 건 언제 필요할까?
+> → ESLint 커스텀 룰, 코드 변환 도구, 타입 기반 코드 생성 등
+
+나중에 이 지식이 어디에 쓰이는지에 대한 한 줄 정리라도 있으면 괜찮을거 같다.
+
 ### 4. 다음 타임에 바꿀 것
 
 - 유지할 것과 그 이유
+현재의 학습방식을 유지할거 같다.
+
 - 바꿀 것과 그 이유
+agent를 잘 활용하면 코드 베이스를 더 잘 이해할 수 있는 방법이 있지 않을까 싶다.
+하지만 이건 TypeScript 학습과 관련된 부분이라기 보단.
+소스코드 베이스를 이해하는 기술중 하나라고 생각된다.
 
-...
-
-- 효과적인 학습이 왜 중요한가?
-- 나의 기존 학습법 v1 떠올려보기
-- 공유 및 피드백
-- 효과적으로 학습하는 사람들은 어떤 모습을 하고 있나요?
-- 효과적인 학습자의 특징 정리
-- 학습법 v2 Refactor
-- 학습법 v2 활용하여 실제로 학습해보기
-- 학습 회고
-- 공유
-- 학습법 v3 세우기
-- 회고
-- 강의 피드백
+바꾸고 싶은 부분을 꼽자면 AI를 덜 사용하고 실제로 소스코드를 디버깅 해보는 것이다.
+하지만 앞에서도 말했듯이 이 방식이 독이될 수 있다.
+심지어 TS같은 비교적 저수준에서는 더 큰 어려움이 존재한다.
+나중에 TS에 정말 익숙해지고 TS에 매력을 느낄 때 해도 늦지 않는다고 생각한다.
+지금 상황에서는 이 정도만 수행한게 괜찮았다는 생각이 든다.
+AI에게 피드백 받은것처럼 이게 그래서 어디에 사용되는데? 라는 것도 고민해보면 좋을거 같다.

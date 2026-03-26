@@ -13,7 +13,7 @@ ts-exercise-explainer
 
 Claude Code Agent
 
-### ts-exercise-explainer agent
+### ts-exercise-explainer
 
 Cluade Code Agent
 
@@ -28,7 +28,7 @@ Cluade Code Agent
 사용자는 난이도 (1 ~ 4)와 문제를 선택하여 힌트를 제공받을 수 있다.
 힌트 수준을 조절하여 학습 효율을 더 강화시킬 목적이다.
 
-### ts-exercise-explainer agent
+### ts-exercise-explainer
 
 문제를 해결하지 못했을때 답을 파악하고 답에 대한 디테일한 해설이 필요하다고 느꼈다.
 이러한 상황에서는 결국 해설을 통해 학습을 해야한다고 생각했다.
@@ -54,7 +54,7 @@ When the user shares a problem, always ask for the desired hint level before res
 위와 같은 초기 스크립트를 기반으로 만들었다.
 그리고 이후에 빠른 입력 방식이나 한국어 응답과 관련된 부분들을 추가했다.
 
-### ts-exercise-explainer agent
+### ts-exercise-explainer
 
 claude 에서 /agents 를 통해 제작했다.
 

@@ -15,6 +15,8 @@ Claude Code Agent
 
 ### ts-exercise-explainer agent
 
+Cluade Code Agent
+
 ## **해결하려는 문제**: 어떤 학습 상의 불편/문제를 해결하려 했는가?
 
 ### ts-exercise-explainer agent
